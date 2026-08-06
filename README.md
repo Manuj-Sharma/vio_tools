@@ -30,10 +30,28 @@ max-distance as well: run 181121 passed at 42.5% MSCKF while sitting 1225 m off.
     mem_probe.sh CFG [REPS]       reps with memory counters beside the result
 
 This pipeline is NOT deterministic — `flight_D_best` spans scale 0.857-0.984 and
-`flight_A` spans 0.539-1.075. Always run 3+ reps. Suspected cause: RANSAC in
-TrackKLT draws from an unseeded generator, because `cv::setRNGSeed(0)` runs in
-the VioManager constructor while `cv::theRNG()` is thread-local and tracking
-happens on the ROS callback thread.
+`flight_A` spans 0.539-1.075. Always run 3+ reps, and judge on the FAILURE RATE
+rather than the mean.
+
+Eliminated as the cause by direct test — do not re-run these:
+
+    num_opencv_threads: 1     3 distinct hashes over 3 reps
+    RANSAC seeding (08-06)    3 distinct; fix kept anyway, VIO commit 1b5c5f4
+    --rate 0.5                3 distinct AND worse: MSCKF 42% vs 63%,
+                              max dist 175-1450 m vs 176-422 m
+    CPU / subscriber load, frame selection, memory, the binary, the bag
+
+WHERE runs diverge: bias traces are identical to 3 decimals through the climb
+(0-70 m, frac 0.05-0.10 of the run) and separate at the top of climb, ~100 m,
+frac 0.20. The ill-conditioned nadir geometry AMPLIFIES a difference there — but
+amplification cannot create one, so a source still exists upstream.
+
+Prime remaining suspect: `run_subscribe_msckf.cpp:85` hardcodes
+`use_multi_threading_subs = true` AFTER `print_and_load`, so the config key
+cannot switch it off. The IMU (238 Hz) and camera (30 Hz) callbacks then run
+concurrently and the scheduler decides the order measurements reach the filter.
+Upstream knows: `ros1_serial_msckf.cpp:67` carries
+`// params.use_multi_threading_pubs = 0; // uncomment if you want repeatability`.
 
 ## Sensors and data
 
