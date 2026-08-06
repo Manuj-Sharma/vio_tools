@@ -1,0 +1,2 @@
+/tmp/vio_logs/openvins_bag_20260804_153727.log
+/tmp/vio_logs/openvins_bag_20260804_154153.log

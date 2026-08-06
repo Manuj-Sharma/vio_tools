@@ -1,0 +1,62 @@
+[13:59:29] waiting for upload to finish: /home/vc/rosbags/field_data/seg01.bag
+[13:59:29]   still copying: 2.8G
+[13:59:59]   still copying: 3.1G
+[14:00:29]   still copying: 3.4G
+[14:00:59]   still copying: 3.7G
+[14:01:29]   still copying: 4.0G
+[14:01:59]   still copying: 4.3G
+[14:02:29]   still copying: 4.5G
+[14:02:59]   still copying: 4.7G
+[14:03:29]   still copying: 4.9G
+[14:03:59]   still copying: 5.2G
+[14:04:29]   still copying: 5.5G
+[14:04:59]   still copying: 5.7G
+[14:07:29] upload complete: 5.9G
+[14:07:29] convert -> /home/vc/rosbags/field_data/seg01_ros2   (need ~5 GB, have 14 GB)
+[14:07:59] patched offered_qos_profiles [] -> ""
+[14:07:59] verifying...
+import sys, numpy as np
+from rosbags.rosbag2 import Reader
+from rosbags.typesys import Stores, get_typestore
+TS=get_typestore(Stores.ROS2_HUMBLE)
+ch=[];ih=[];a=[];meta=set()
+with Reader(sys.argv[1]) as r:
+    for c,ts,raw in r.messages():
+        m=TS.deserialize_cdr(raw,c.msgtype)
+        hs=m.header.stamp.sec+m.header.stamp.nanosec*1e-9
+        if c.topic=='/cam0/image_raw':
+            ch.append(hs); meta.add((m.width,m.height,m.encoding))
+        else:
+            ih.append(hs); a.append((m.linear_acceleration.x,m.linear_acceleration.y,m.linear_acceleration.z))
+ch=np.array(sorted(ch)); ih=np.array(sorted(ih)); a=np.array(a)
+print("   image %s"%meta)
+print("   cam %d @ %.2f Hz | imu %d @ %.1f Hz | dur %.1f s"%(
+    len(ch),(len(ch)-1)/(ch[-1]-ch[0]),len(ih),(len(ih)-1)/(ih[-1]-ih[0]),ch[-1]-ch[0]))
+print("   monotonic cam=%s imu=%s | imu brackets cam=%s"%(
+    bool(np.all(np.diff(ch)>0)),bool(np.all(np.diff(ih)>0)),
+    ih.min()<=ch.min() and ih.max()>=ch.max()))
+print("   |accel| median %.3f (expect ~9.78)"%np.median(np.linalg.norm(a,axis=1)))
+[14:07:59] running OpenVINS (static init, aerial gates, --no-rviz)
+[14:11:53] RESULTS from openvins_bag_20260803_140807.log
+import re, sys
+L=sys.argv[1]; ms=[];sl=[];dist='';ba='';klt=0;ik=None;ori='';vel=''
+for line in open(L,errors='ignore'):
+    if 'seconds for tracking' in line: klt+=1
+    if 'successful initialization' in line and ik is None: ik=klt
+    m=re.search(r"\[init\]: orientation = (.+)",line)
+    if m and not ori: ori=m.group(1).strip()
+    m=re.search(r"\[init\]: velocity = (.+)",line)
+    if m and not vel: vel=m.group(1).strip()
+    m=re.search(r"MSCKF update \((\d+) feats\)",line)
+    if m: ms.append(int(m.group(1)))
+    m=re.search(r"SLAM update \((\d+) feats\)",line)
+    if m: sl.append(int(m.group(1)))
+    m=re.search(r"dist = ([\d.]+)",line)
+    if m: dist=m.group(1)
+    m=re.search(r"ba = ([-\d.]+,[-\d.]+,[-\d.]+)",line)
+    if m: ba=m.group(1)
+nz=sum(1 for x in ms if x>0)
+print(f"   KLT frames {klt} | init@frame {ik} | ori {ori} | vel {vel}")
+print(f"   MSCKF {nz}/{len(ms)} ({100*nz/max(len(ms),1):.1f}%) {sum(ms)} feats | SLAM {sum(sl)} feats")
+print(f"   final dist {dist} m | ba {ba}")
+[14:11:53] INGESTDONE

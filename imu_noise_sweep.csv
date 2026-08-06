@@ -1,0 +1,5 @@
+config,acc_nd,gyr_nd,klt,init_frame,msckf_upd,msckf_nonzero,msckf_pct,msckf_feats,slam_feats,final_dist_m,ba,log
+ov_9281_aerial_staticinit,1.19e-03,1.67e-04,3030,45,2985,1029,34.5,8304,51065,1057.89,"0.0235,0.0571,-0.0032",openvins_bag_20260803_152113.log
+ov_9281_flight_imu10x,1.19e-02,1.67e-03,3030,45,2985,1227,41.1,13542,76764,2429.99,"0.0415,0.1647,-0.2056",openvins_bag_20260803_152504.log
+ov_9281_flight_imu100x,1.19e-01,1.67e-02,2633,45,2588,642,24.8,7900,44444,81122.64,"-0.5154,0.3458,-1.6501",openvins_bag_20260803_152855.log
+ov_9281_flight_imu_meas,1.50e-01,6.00e-03,3030,45,2985,2062,69.1,24055,141021,1082.15,"-0.7075,-0.2462,-0.0134",openvins_bag_20260803_153246.log

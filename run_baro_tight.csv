@@ -1,0 +1,2 @@
+rep,klt,msckf_pct,msckf_feats,slam_feats,peak_alt,final_alt,max_descent,ba,cfg_ok,log
+1,3030,69.4,24334,137480,105.1,4.7,-5.74,"-0.0846,0.2152,-0.0143",True,openvins_bag_20260804_150008.log

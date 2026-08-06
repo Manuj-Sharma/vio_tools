@@ -1,0 +1,4 @@
+rate,rep,msckf_upd,msckf_nonzero,msckf_pct,msckf_feats,slam_feats,final_dist_m,ba_x,ba_y,ba_z,timeouts,log
+0.5,1,3971,1741,43.8,16690,112707,730.39,0.0320,-0.0121,0.0374,0,openvins_bag_20260803_122354.log
+0.5,2,3971,1729,43.5,16875,114099,750.24,0.0382,-0.0075,0.0364,0,openvins_bag_20260803_123116.log
+1.0,ref,3971,1321,33.3,11929,92316,816.32,0.0189,0.0008,0.0335,0,openvins_bag_20260803_123837.log
