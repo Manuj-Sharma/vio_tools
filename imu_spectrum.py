@@ -17,16 +17,26 @@ Two things go wrong and neither is visible in the time domain:
   Nyquist edge is the warning sign -- it means the sensor's internal filter is
   not cutting hard enough before sampling.
 
+  DO NOT read that flag before checking the dropout rate below. Closing up
+  missing samples ALSO piles energy against Nyquist, and on the flight bags that
+  turned out to be the whole of it -- see imu_gap_compare.py.
+
   BIAS/ATTITUDE CORRUPTION. Rectified vibration shows up as an apparent bias.
   This dataset shows bg_y drifting -0.063 -> -0.149 deg/s during cruise and
   recovering on descent, which is the shape you would expect if vibration
   amplitude tracks throttle.
 
+SAMPLING. The IMU delivers ~238 Hz against a 250 Hz nominal, so ~5% of the grid
+is missing. Handing that straight to the FFT closes the gaps up, and every gap
+is then a phase discontinuity: against a synthetic line at a KNOWN 16.6688 Hz
+with 4.9% dropped, the closed-up spectrum reports 17.441 Hz at 53x its floor
+while the correct answer is 16.663 Hz at 781x. So the channels are interpolated
+onto the true uniform grid first. Linear interpolation biases magnitudes down a
+little at high frequency; peak FREQUENCIES are unaffected.
+
 WHAT IT REPORTS
 
-  * measured sample rate and dt jitter (the FFT assumes uniform sampling; if
-    jitter is large the spectrum is smeared and peak frequencies are only
-    approximate)
+  * measured sample rate, dropout fraction, and dt jitter
   * Welch PSD per axis, gyro and accel
   * the dominant peaks per axis with their frequencies
   * band powers: 0-5 Hz is vehicle motion, everything above is vibration
@@ -98,18 +108,27 @@ def main():
 
     t, g, a = read_imu(args.bag, args.topic)
     dt = np.diff(t)
-    fs = 1.0 / np.median(dt)
+    nominal = float(np.median(dt))
+    fs = 1.0 / nominal
     nyq = fs / 2
+    dropped = int((np.round(dt / nominal).astype(int) - 1).sum())
+    ideal = len(t) + dropped
     print(f"  {len(t)} samples over {t[-1]-t[0]:.1f} s")
-    print(f"  fs {fs:.2f} Hz (median dt {np.median(dt)*1000:.3f} ms)   Nyquist {nyq:.1f} Hz")
+    print(f"  fs {fs:.2f} Hz nominal (median dt {nominal*1000:.3f} ms), "
+          f"{len(t)/(t[-1]-t[0]):.2f} Hz delivered   Nyquist {nyq:.1f} Hz")
+    print(f"  dropped {dropped} of an ideal {ideal} ({100*dropped/ideal:.2f}%) "
+          f"-- resampled onto the true grid before the FFT")
     print(f"  dt jitter: std {np.std(dt)*1000:.3f} ms, p99 {np.percentile(dt,99)*1000:.3f} ms, "
           f"max {dt.max()*1000:.1f} ms")
-    if np.std(dt) / np.median(dt) > 0.2:
-        print("  WARNING: dt jitter > 20% of the interval -- peak frequencies are approximate")
+    if dropped / ideal > 0.02:
+        print("  NOTE: >2% dropped. Compare against imu_gap_compare.py before reading")
+        print("        anything into peaks near Nyquist -- that is where gap artifacts land.")
     print()
 
+    grid = t[0] + np.arange(int(round((t[-1] - t[0]) / nominal)) + 1) * nominal
     names = ["gyro x", "gyro y", "gyro z", "accel x", "accel y", "accel z"]
-    chans = [g[:, 0], g[:, 1], g[:, 2], a[:, 0], a[:, 1], a[:, 2]]
+    chans = [np.interp(grid, t, x) for x in
+             (g[:, 0], g[:, 1], g[:, 2], a[:, 0], a[:, 1], a[:, 2])]
     units = ["(rad/s)^2/Hz"] * 3 + ["(m/s^2)^2/Hz"] * 3
 
     spectra = []
@@ -155,7 +174,9 @@ def main():
 
     if args.split:
         print("\n  === by flight phase (thirds) ===")
-        n = len(t) // 3
+        print("  (a 3-column spectrogram. If you care about WHEN, use imu_spectrogram.py --")
+        print("   on a moving platform the level swings 20 dB and thirds will not show it.)")
+        n = len(grid) // 3
         for lbl, sl in (("first ", slice(0, n)), ("middle", slice(n, 2 * n)),
                         ("last  ", slice(2 * n, None))):
             row = f"  {lbl}"
