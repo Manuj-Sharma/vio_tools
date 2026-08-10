@@ -66,9 +66,46 @@ The lidar reads `inf` above its 95 m max_range and the mission cruises at ~107 m
 so 66% of returns are unusable and the entire box has no coverage. It is valid
 100% below 60 m — climb and descent only.
 
+## IMU spectral analysis
+
+    imu_spectrum.py BAG           Welch PSD, band powers, aliasing flag
+    imu_spectrogram.py BAG        STFT — use this on flight data
+    imu_gap_compare.py BAG        gap-closed vs resampled PSD, overlaid
+    imu_plot.py BAG               raw time series (--t0/--t1 to zoom)
+    allan_variance.py BAG         Allan deviation off a static log
+    imu_vibe_vs_alt.py BAG        band level vs altitude and climb rate
+    imu_window_probe.py BAG --win yaw, tilt and thrust proxy over a window
+    record_imu.sh [SEC] [NAME]    log /imu0 to a bag with fan RPM alongside
+
+READ THE DROPOUT LINE FIRST. The IMU delivers ~238 Hz against a 250 Hz nominal,
+so ~5% of the grid is missing. Everything here resamples onto the true grid
+before transforming; anything you write that does not will misplace lines by
+~0.8 Hz and lose 15x of contrast. That bug produced a false aliasing conclusion
+in 7ca33dc, retracted in 49d6f0a.
+
+Welch vs STFT: Welch averages the time axis away, which is optimal on a bench and
+wrong in flight. Broadband level swings 20 dB across a single flight, so a Welch
+curve of a flight bag is an average of things that never coexisted. Use
+`imu_spectrogram.py` when the question contains "when" or "during".
+
+Known contamination — do not re-derive:
+
+    16.669 Hz in any bench log   the Jetson fan (= 1000 rpm). Tracks fan RPM;
+                                 confirmed at 30.060 Hz @ 1806 rpm. Absent in
+                                 flight. Contaminates Allan noise densities, so
+                                 08-06's N values are upper bounds.
+    peaks near Nyquist           check imu_gap_compare.py before believing them
+    34-45 Hz humps in flight     broadband, NOT smeared swept prop tones
+
+Flight vibration tracks TILT (r = +0.802, vib_dB = 0.52*deg - 20.8), not altitude
+(+0.006) or climb rate (+0.123). 0.05 g RMS level, 0.49 g RMS at 29 deg.
+
 ## Records
 
     AERIAL_TUNING_LEDGER.md       08-03 sweeps. Its measurements stand; its
                                   RANKING is superseded (scored on MSCKF%).
+    records/2026-08-07_imu_spectral.md
+                                  the fan, the gap bug, and flight vibration vs
+                                  tilt. Retracts the aliasing claim in 7ca33dc.
     ../results_20260805/          08-05 session: 41 runs, findings, what is
                                   disproven. Read before re-deriving anything.
