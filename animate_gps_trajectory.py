@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""animate_gps_trajectory.py -- animate /fc/gps1 position + /fc/ekf_yaw heading
+"""animate_gps_trajectory.py -- animate /fc/gps2 position + /fc/ekf_yaw heading
 over time from a recorded rosbag, shown on screen.
 
 Reads directly from the bag's sqlite3 file -- no ROS node, no `ros2 bag play`
@@ -76,7 +76,7 @@ def read_topic(cur, topic, msg_type_name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag", help="bag directory (or a .db3 file directly)")
-    ap.add_argument("--gps-topic", default="/fc/gps1", help="NavSatFix topic (default: /fc/gps1)")
+    ap.add_argument("--gps-topic", default="/fc/gps2", help="NavSatFix topic (default: /fc/gps2)")
     ap.add_argument("--yaw-topic", default="/fc/ekf_yaw", help="Float32 yaw topic, radians (default: /fc/ekf_yaw)")
     ap.add_argument("--speed", type=float, default=1.0, help="playback speed multiplier (default: 1.0 = real time)")
     ap.add_argument("-o", "--output", default=None,

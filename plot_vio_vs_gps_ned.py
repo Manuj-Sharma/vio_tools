@@ -14,7 +14,7 @@ a SITL/offline tuning run where VIO's yaw is genuinely unknown. This script is
 for the real-hardware pipeline instead: the yaw alignment is ALREADY applied
 upstream (the one-time frozen yaw_offset in vio_pose_to_fc_topic.py, logged to
 ~/rosbags/yaw_alignment_log.csv) and GPS comes from the live rig's own
-/fc/gps1, not a separate log file -- no fitting here, just plot what the
+/fc/gps2, not a separate log file -- no fitting here, just plot what the
 pipeline already produced, for one run at a time.
 
 Usage:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""plot_gps_trajectory.py -- plot /fc/gps1 (local east/north trajectory) and
+"""plot_gps_trajectory.py -- plot /fc/gps2 (local east/north trajectory) and
 /fc/ekf_yaw (heading over time) from a recorded rosbag, shown on screen.
 
 Reads directly from the bag's sqlite3 file -- no ROS node, no `ros2 bag play`
@@ -13,7 +13,7 @@ Usage:
     python3 ~/vio_tools/plot_gps_trajectory.py ~/rosbags/vio_20260924_134543
     python3 ~/vio_tools/plot_gps_trajectory.py ~/rosbags/vio_20260924_134543 -o /tmp/out.png
     python3 ~/vio_tools/plot_gps_trajectory.py ~/rosbags/vio_20260924_134543 \
-        --gps-topic /fc/gps1 --yaw-topic /fc/ekf_yaw
+        --gps-topic /fc/gps2 --yaw-topic /fc/ekf_yaw
 """
 import argparse
 import bisect
@@ -75,7 +75,7 @@ def read_topic(cur, topic, msg_type_name):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("bag", help="bag directory (or a .db3 file directly)")
-    ap.add_argument("--gps-topic", default="/fc/gps1", help="NavSatFix topic (default: /fc/gps1)")
+    ap.add_argument("--gps-topic", default="/fc/gps2", help="NavSatFix topic (default: /fc/gps2)")
     ap.add_argument("--yaw-topic", default="/fc/ekf_yaw", help="Float32 yaw topic, radians (default: /fc/ekf_yaw)")
     ap.add_argument("-o", "--output", default=None,
                      help="also save a PNG to this path (default: don't save, just show)")
