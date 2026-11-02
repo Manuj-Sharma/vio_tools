@@ -52,18 +52,38 @@ fi
 echo
 
 # ---- sensors (sequence copied from sensors_and_record.sh do_start; keep in sync) ----
+# 2026-11-02: CAM_OPEN_TRIGGERED=1 (default) = PWM trigger FIRST, both cameras opened directly in trigger mode (no
+# mid-stream switch). The old sequence switched cam1 into trigger mode ~13 s after start while it was streaming, which
+# stalled cam1 (kernel capture-vi timeouts, VxGetImage failures) for 3-30 s. CAM_OPEN_TRIGGERED=0 = the old sequence.
+CAM_OPEN_TRIGGERED="${CAM_OPEN_TRIGGERED:-1}"
+PWM=/sys/class/pwm/pwmchip2/pwm0
+pwm_ok() {   # trigger_cam.sh exits right after starting the PWM, so read the PWM state from sysfs
+  [ "$(cat "$PWM/enable" 2>/dev/null)" = 1 ] || return 1
+  local per exp; per=$(cat "$PWM/period" 2>/dev/null); exp=$(( 1000000000 / ${TRIGGER_HZ:-60} ))
+  [ -n "$per" ] && (( per > exp * 99 / 100 && per < exp * 101 / 100 ))
+}
 pgrep -x imx5_spi_node >/dev/null && { echo "ABORT: sensors already running - stop them first ($SAR stop)"; exit 1; }
 set +u; source /opt/ros/humble/setup.bash; source "$REPO/install/setup.bash"; set -u
 echo "Starting sensors (~30-40 s)..."
-vizion-ctl -d 0 -s trigger_mode=0 >/dev/null; vizion-ctl -d 1 -s trigger_mode=0 >/dev/null
-sleep 2
+if [ "$CAM_OPEN_TRIGGERED" = 1 ]; then
+  (cd "$REPO" && CAM1_TRIGGER_SWITCH=0 ./trigger_cam.sh) > "$LOGDIR/trigger.log" 2>&1 \
+    || abort "camera trigger (PWM) did not start - see $LOGDIR/trigger.log"
+  pwm_ok || abort "PWM readback does not show ${TRIGGER_HZ:-60} Hz running - see $LOGDIR/trigger.log"
+  sleep 2
+  export CAM_TRIGGER_MODE=2   # read by vio_bringup.launch.py: both camera nodes open in trigger mode
+else
+  vizion-ctl -d 0 -s trigger_mode=0 >/dev/null; vizion-ctl -d 1 -s trigger_mode=0 >/dev/null
+  sleep 2
+fi
 ros2 daemon stop >/dev/null 2>&1 || true
 setsid nohup ros2 launch "$REPO/vio_bringup/vio_bringup.launch.py" > "$LOGDIR/sensors.log" 2>&1 < /dev/null &
 wait_for_process imx5_spi_node   25 || abort "IMU never came up - see $LOGDIR/sensors.log"
 wait_for_process vizionsdk_camer 25 || abort "camera never came up - see $LOGDIR/sensors.log"
-vizion-ctl -d 0 -s trigger_mode=2 >/dev/null
-sleep 2
-(cd "$REPO" && setsid nohup ./trigger_cam.sh > "$LOGDIR/trigger.log" 2>&1 < /dev/null &)
+if [ "$CAM_OPEN_TRIGGERED" != 1 ]; then
+  vizion-ctl -d 0 -s trigger_mode=2 >/dev/null
+  sleep 2
+  (cd "$REPO" && setsid nohup ./trigger_cam.sh > "$LOGDIR/trigger.log" 2>&1 < /dev/null &)
+fi
 t0=$SECONDS; cams_ok=0
 while (( SECONDS - t0 < 40 )); do
   if timeout 4 ros2 topic echo --once --field width /cam0/image_raw >/dev/null 2>&1 &&
@@ -71,7 +91,7 @@ while (( SECONDS - t0 < 40 )); do
   sleep 1
 done
 (( cams_ok )) || abort "cameras not publishing after 40 s - see $LOGDIR/sensors.log"
-pgrep -f trigger_cam.sh >/dev/null || abort "trigger loop is not running"
+pwm_ok || abort "camera trigger PWM is not running"
 sleep 5   # warm-up settle
 echo "Sensors up: cameras publishing, trigger running."
 
