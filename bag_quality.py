@@ -14,7 +14,11 @@ Two independent things get checked:
             effective cam-IMU time offset, measured from this bag alone and
             independent of Kalibr.
 
-  bag_quality.py ROS2_BAG_DIR [MAX_FRAMES]
+  bag_quality.py ROS2_BAG_DIR [MAX_FRAMES] [KALIBR_IMUCAM_CHAIN.yaml]
+
+Default chain is the CURRENT AR0234 rig (openvins_config/ar0234_stereo in vio_ar0234_icm20948).
+It used to point at the old OV9281 rig in ~/sensor_ws, which gave the wrong fx, T_cam_imu and
+timeshift for this hardware (fixed 2026-10-22).
 """
 import sys
 
@@ -26,7 +30,7 @@ from rosbags.typesys import Stores, get_typestore
 
 BAG = sys.argv[1]
 MAXF = int(sys.argv[2]) if len(sys.argv) > 2 else 4000
-CHAIN = "/home/vc/sensor_ws/src/sensor_bringup/config/ov_9281_aerial_staticinit/kalibr_imucam_chain.yaml"
+CHAIN = sys.argv[3] if len(sys.argv) > 3 else "/home/vc/vio_ar0234_icm20948/openvins_config/ar0234_stereo/kalibr_imucam_chain.yaml"
 TS = get_typestore(Stores.ROS2_HUMBLE)
 
 # calibration -- fx and R_cam_imu, and the timeshift we will compare against
@@ -44,6 +48,8 @@ cam_t, cam_img, imu_t, gyr, acc = [], [], [], [], []
 with Reader(BAG) as r:
     n = 0
     for c, _, rawmsg in r.messages():
+        if c.topic not in ("/cam0/image_raw", "/imu0"):
+            continue   # was: every non-cam0 topic (cam1, /fc/*) fell into the IMU branch and crashed
         m = TS.deserialize_cdr(rawmsg, c.msgtype)
         t = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
         if c.topic == "/cam0/image_raw":

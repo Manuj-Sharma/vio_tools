@@ -167,8 +167,7 @@ def main():
     ap.add_argument("--imu", default="/imu0")
     ap.add_argument("--max-img", type=int, default=2500, help="images held in RAM")
     ap.add_argument("--flow", type=int, default=1500, help="frames used for flow/offset")
-    ap.add_argument("--chain", default="/home/vc/sensor_ws/src/sensor_bringup/config/"
-                                       "ov_9281_aerial_staticinit/kalibr_imucam_chain.yaml")
+    ap.add_argument("--chain", default="/home/vc/vio_ar0234_icm20948/openvins_config/ar0234_stereo/kalibr_imucam_chain.yaml")
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     J = {}

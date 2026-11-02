@@ -28,6 +28,12 @@ on few independent samples and are indicative only -- the script marks them.
 
 Sampling is assumed uniform at the median rate. This IMU's stamps are quantised
 to whole ms with ~5% of samples missing, so tau is accurate to about a percent.
+
+--t0/--t1 TRIMS THE WINDOW before computing anything, same convention as
+imu_plot.py. Use it to cut spikes at the start/end of a bench capture (letting
+go of / picking up the sensor, ros2 bag record startup) -- run imu_plot.py or
+estimate_imu_bias.py's spike detector first to find where they are. Trimming
+also shortens T, which lowers the tau ~ T/10 reliability ceiling accordingly.
 """
 import argparse
 import os
@@ -88,11 +94,22 @@ def main():
     ap.add_argument("bag")
     ap.add_argument("-o", "--out", default="/tmp/allan.png")
     ap.add_argument("--topic", default="/imu0")
+    ap.add_argument("--t0", type=float, help="window start [s from bag start]")
+    ap.add_argument("--t1", type=float, help="window end [s from bag start]")
     args = ap.parse_args()
 
     t, g, a = read_imu(args.bag, args.topic)
+    t = t - t[0]
+    lo = args.t0 if args.t0 is not None else t[0]
+    hi = args.t1 if args.t1 is not None else t[-1]
+    m = (t >= lo) & (t <= hi)
+    if m.sum() < 2:
+        raise SystemExit(f"window {lo}-{hi}s selects {m.sum()} samples of {len(t)}")
+    t, g, a = t[m], g[m], a[m]
     dt = float(np.median(np.diff(t)))
     T = t[-1] - t[0]
+    if args.t0 is not None or args.t1 is not None:
+        print(f"  trimmed to {lo:.2f}-{hi:.2f}s")
     print(f"  {len(t)} samples, {T:.1f} s, fs {1/dt:.2f} Hz")
     print(f"  curve reliable to tau ~ {T/10:.0f} s; beyond that too few independent samples\n")
 
