@@ -7,6 +7,7 @@
 //
 //   imx5_noros_poll [--period-us 3000] [--speed 3000000] [--len 512] [--secs 120]
 //                   [--all-protocols] [--dev /dev/spidev0.0] [--rt N] [--csv FILE]
+//                   [--sys-every N]   every N polls also request DID_SYS_PARAMS (IMX temp, status, fault, uptime); 0=off, default 330
 //                   [--retry-us N [--retry-max M]]   re-poll N us after an EMPTY poll (up to M times, default 1)
 //
 // Every 5 s it prints: unique IMU samples/s (the number comparable to the node's "/imu0 N Hz"),
@@ -52,6 +53,26 @@ static void fletcher16(const uint8_t *d, size_t n, uint8_t *a_out, uint8_t *b_ou
 static int fd = -1;
 static uint32_t speed_hz = 3000000;
 
+// ---- temperatures / fan (plain sysfs reads; no root needed) ----
+static std::string g_tj_path, g_fan_path;
+static void find_sysfs() {
+    for (int i = 0; i < 20; ++i) {
+        char p[96]; snprintf(p, sizeof(p), "/sys/class/thermal/thermal_zone%d/type", i);
+        if (FILE *f = fopen(p, "r")) { char t[64] = {0}; if (fscanf(f, "%63s", t) == 1 && std::string(t) == "tj-thermal") { snprintf(p, sizeof(p), "/sys/class/thermal/thermal_zone%d/temp", i); g_tj_path = p; } fclose(f); }
+    }
+    for (int i = 0; i < 10; ++i) {
+        char p[128]; snprintf(p, sizeof(p), "/sys/devices/platform/pwm-fan/hwmon/hwmon%d/pwm1", i);
+        if (access(p, R_OK) == 0) { g_fan_path = p; break; }
+    }
+}
+static double read_num(const std::string &path, double scale) {
+    if (path.empty()) return NAN;
+    double v = NAN; if (FILE *f = fopen(path.c_str(), "r")) { if (fscanf(f, "%lf", &v) != 1) v = NAN; fclose(f); }
+    return v * scale;
+}
+// latest DID_SYS_PARAMS contents
+static bool g_have_sys = false; static float g_imx_temp = NAN; static uint32_t g_hdw = 0, g_sysst = 0, g_fault = 0, g_imuper = 0, g_flashck = 0; static double g_imx_up = 0;
+
 static int spi_xfer(const uint8_t *tx, uint8_t *rx, size_t len) {
     spi_ioc_transfer tr; memset(&tr, 0, sizeof(tr));
     tr.tx_buf = (unsigned long)tx; tr.rx_buf = (unsigned long)rx;
@@ -60,7 +81,7 @@ static int spi_xfer(const uint8_t *tx, uint8_t *rx, size_t len) {
 }
 
 int main(int argc, char **argv) {
-    int period_us = 3000, len = 512, secs = 120, rt = 0, retry_us = 0, retry_max = 1;
+    int period_us = 3000, len = 512, secs = 120, rt = 0, retry_us = 0, retry_max = 1, sys_every = 330;
     bool all_protocols = false;
     std::string dev = "/dev/spidev0.0", csv;
     for (int i = 1; i < argc; ++i) {
@@ -73,12 +94,14 @@ int main(int argc, char **argv) {
         else if (a == "--rt") rt = atoi(nx());
         else if (a == "--retry-us") retry_us = atoi(nx());
         else if (a == "--retry-max") retry_max = atoi(nx());
+        else if (a == "--sys-every") sys_every = atoi(nx());
         else if (a == "--dev") dev = nx();
         else if (a == "--csv") csv = nx();
         else if (a == "--all-protocols") all_protocols = true;
         else { fprintf(stderr, "unknown arg %s\n", a.c_str()); return 2; }
     }
     signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
+    find_sysfs();
 
     fd = open(dev.c_str(), O_RDWR);
     if (fd < 0) { perror("open spidev"); return 1; }
@@ -106,10 +129,10 @@ int main(int argc, char **argv) {
     }
     printf("# period=%d us  speed=%u Hz  len=%d B (frame=%.3f ms)  protocols=%s  rt=%d  retry=%d us x%d\n", period_us,
            speed_hz, len, len * 8.0 / speed_hz * 1e3, all_protocols ? "default(ISB+NMEA+UBX+RTCM3)" : "ISB only", rt, retry_us, retry_max);
-    printf("# %-6s %8s %6s %6s %6s %8s %8s %6s %6s | first-preamble in frame: %5s %5s %5s %5s\n", "t(s)", "Hz", "polls",
-           "empty", "late", "gap_ms", "spi_ms", "retry", "recov", "early", "mid", "late", "none");
+    printf("# %-6s %8s %6s %6s %6s %8s %8s %6s %6s | first-preamble in frame: %5s %5s %5s %5s | %6s %5s %4s %10s\n", "t(s)", "Hz", "polls",
+           "empty", "late", "gap_ms", "spi_ms", "retry", "recov", "early", "mid", "late", "none", "imxT", "Tj", "fan", "hdw/fault");
     FILE *cf = csv.empty() ? nullptr : fopen(csv.c_str(), "w");
-    if (cf) fprintf(cf, "t,hz,polls,empty,late,maxgap_ms,spi_max_ms,retries,recovered,early,mid,late,none\n");
+    if (cf) fprintf(cf, "t,hz,polls,empty,late,maxgap_ms,spi_max_ms,retries,recovered,early,mid,late,none,imx_temp,tj,fan,hdwStatus,faultCode,sysStatus,imuPeriodMs\n");
 
     std::vector<uint8_t> tx(len), rx(len);
     const double period = period_us * 1e-6;
@@ -133,6 +156,10 @@ int main(int argc, char **argv) {
         memset(tx.data(), 0xFF, len);
         int req = is_comm_get_data_to_buf(tx.data(), len, &comm, DID_IMU_RAW, 0, 0, 0);
         if (req <= 0) { fprintf(stderr, "request build failed\n"); return 1; }
+        if (sys_every > 0 && (tot_polls % sys_every) == 0) {
+            int r2 = is_comm_get_data_to_buf(tx.data() + req, len - req, &comm, DID_SYS_PARAMS, 0, 0, 0);
+            (void)r2;
+        }
         double s0 = now_s();
         if (spi_xfer(tx.data(), rx.data(), len) < 0) { perror("spi_xfer"); return 1; }
         spi_max = std::max(spi_max, now_s() - s0);
@@ -148,6 +175,17 @@ int main(int argc, char **argv) {
             protocol_type_t pt;
             while ((pt = is_comm_parse(&comm)) != _PTYPE_NONE) {
                 if (pt != _PTYPE_INERTIAL_SENSE_DATA) continue;
+                if (comm.rxPkt.dataHdr.id == DID_SYS_PARAMS) {
+                    const sys_params_t *sp = (const sys_params_t *)comm.rxPkt.data.ptr;
+                    g_imx_temp = sp->imuTemp; g_hdw = sp->hdwStatus; g_sysst = sp->sysStatus; g_fault = sp->genFaultCode;
+                    g_imuper = sp->imuSamplePeriodMs; g_flashck = sp->flashCfgChecksum; g_imx_up = sp->upTime;
+                    if (!g_have_sys) {
+                        g_have_sys = true;
+                        printf("# IMX sys_params: upTime=%.1f s imuTemp=%.1f C hdwStatus=0x%08x sysStatus=0x%08x fault=0x%x imuSamplePeriodMs=%u flashCfgChecksum=0x%08x\n",
+                               g_imx_up, g_imx_temp, g_hdw, g_sysst, g_fault, g_imuper, g_flashck);
+                    }
+                    continue;
+                }
                 if (comm.rxPkt.dataHdr.id != DID_IMU_RAW) continue;
                 const imu_t *im = (const imu_t *)comm.rxPkt.data.ptr;
                 if (im->time == last_imx_t) ++dup;   // same sample seen twice
@@ -176,10 +214,12 @@ int main(int argc, char **argv) {
         double t = now_s();
         if (t - bin_t >= 5.0) {
             double el = t - bin_t;
-            printf("  %-6.0f %8.1f %6ld %6ld %6ld %8.2f %8.2f %6ld %6ld | %43ld %5ld %5ld %5ld\n", t - t0, pk / el, polls, empty,
-                   late, maxgap * 1e3, spi_max * 1e3, retries, recov, e_early, e_mid, e_late, e_none);
-            if (cf) fprintf(cf, "%.1f,%.1f,%ld,%ld,%ld,%.2f,%.2f,%ld,%ld,%ld,%ld,%ld,%ld\n", t - t0, pk / el, polls, empty, late,
+            double tj = read_num(g_tj_path, 1e-3), fan = read_num(g_fan_path, 1.0);
+            printf("  %-6.0f %8.1f %6ld %6ld %6ld %8.2f %8.2f %6ld %6ld | %43ld %5ld %5ld %5ld | %6.1f %5.1f %4.0f %5x/%x\n", t - t0, pk / el, polls, empty,
+                   late, maxgap * 1e3, spi_max * 1e3, retries, recov, e_early, e_mid, e_late, e_none, (double)g_imx_temp, tj, fan, g_hdw, g_fault);
+            if (cf) fprintf(cf, "%.1f,%.1f,%ld,%ld,%ld,%.2f,%.2f,%ld,%ld,%ld,%ld,%ld,%ld", t - t0, pk / el, polls, empty, late,
                             maxgap * 1e3, spi_max * 1e3, retries, recov, e_early, e_mid, e_late, e_none);
+            if (cf) fprintf(cf, ",%.2f,%.1f,%.0f,0x%x,0x%x,0x%x,%u\n", (double)g_imx_temp, tj, fan, g_hdw, g_fault, g_sysst, g_imuper);
             fflush(stdout);
             bin_t = t; retries = recov = polls = empty = late = pk = e_early = e_mid = e_late = e_none = 0; maxgap = spi_max = 0;
         }
