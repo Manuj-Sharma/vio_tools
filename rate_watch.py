@@ -15,7 +15,7 @@ Needs ROS sourced; run with python3 (NOT -I).
 import argparse, struct, time, csv, os, sys
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Imu, Image
 
 ap = argparse.ArgumentParser()
@@ -33,7 +33,10 @@ class W(Node):
         super().__init__("rate_watch")
         self.n = {k: 0 for k, _, _ in TOPICS}; self.last = {k: None for k, _, _ in TOPICS}; self.gap = {k: 0.0 for k, _, _ in TOPICS}
         for k, t, ty in TOPICS:
-            self.create_subscription(ty, t, (lambda m, k=k: self.cb(k, m)), qos_profile_sensor_data, raw=True)
+            # IMU: deep queue. The default sensor-data queue is 5 messages; at 1 kHz a Python subscriber overflows it and under-reads the
+            # rate by ~1% (seen 2026-11-10: watcher 987 Hz vs the node's own 1000 Hz and `ros2 topic hz` 1000 Hz).
+            qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=5000) if k == "imu" else qos_profile_sensor_data
+            self.create_subscription(ty, t, (lambda m, k=k: self.cb(k, m)), qos, raw=True)
     def cb(self, k, m):
         sec, ns = struct.unpack_from("<iI", m, 4); t = sec + ns * 1e-9
         l = self.last[k]
