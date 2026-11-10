@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# LIVE VIO on the filtered IMU: sensors (IMX 1 kHz stream @ 3 MHz, free-running cameras) -> imu_filter_node -> OpenVINS mono + RViz.
+# LIVE VIO on the filtered IMU: sensors (IMX 1 kHz stream @ 10 MHz, free-running cameras) -> imu_filter_node -> OpenVINS mono + RViz.
 #   vio_live_with_filter.sh [--cam 0|1] [--no-rviz]
 # Starts, in order (sensors + filter node are detached, OpenVINS runs in the foreground):
-#   1. vio_bringup.launch.py   IMX stream mode (IMU_STREAM=1, 128 B frames, 1000 us loop, 3 MHz) + both cameras (CAM_TRIGGER_MODE=0, PWM must be OFF)
+#   1. vio_bringup.launch.py   IMX stream mode (IMU_STREAM=1, 128 B frames, 1000 us loop, 10 MHz; IMU_SPI_HZ=3000000 overrides) + both cameras (CAM_TRIGGER_MODE=0, PWM must be OFF)
 #   2. imu_filter_node         /imu0 (1 kHz raw) -> /imu0_filtered (Butterworth FILT_ORDER=4, FILT_CUTOFF=100 Hz, FILT_OUT_HZ=300)
 #   3. run_openvins_mono.sh    config openvins_config/ar0234_mono_cam<N>_filtered (rostopic /imu0_filtered)
 # Initialisation (static init): hold the rig still ~3 s, then move it. Watch for "successful initialization" in /tmp/vio_logs/openvins_latest.log.
@@ -28,7 +28,7 @@ pgrep -x imu_filter_node >/dev/null && fail "an imu_filter_node is already runni
 [ "$(cat /sys/class/pwm/pwmchip2/pwm0/enable 2>/dev/null)" = 1 ] && fail "camera trigger PWM is ON; this live setup needs it OFF (free-running cameras)"
 
 export CAM_TRIGGER_MODE=0
-export IMU_STREAM="${IMU_STREAM:-1}" IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-3000000}"
+export IMU_STREAM="${IMU_STREAM:-1}" IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-10000000}"
 ros2 daemon stop >/dev/null 2>&1 || true
 echo "[vio_live] starting sensors (IMU stream mode ${IMU_FRAME_LEN} B / ${IMU_POLL_US} us / ${IMU_SPI_HZ} Hz SPI)"
 setsid nohup ros2 launch "$REPO/vio_bringup/vio_bringup.launch.py" > "$L/sensors.log" 2>&1 < /dev/null &

@@ -3,7 +3,7 @@
 #   record_imu_1khz.sh [NAME] [MAX_SECONDS=120]       env: REC_CAMS=1 also records both camera topics (~83 MB/s!)
 # Output: ~/rosbags/imu1k_<NAME>_<stamp>/   (bag with /imu0 only by default)
 #
-# Sensors: same setup as vio_live_with_filter.sh -- IMU stream 128 B frames / 1000 us loop / 3 MHz SPI, cameras free-running
+# Sensors: same setup as vio_live_with_filter.sh -- IMU stream 128 B frames / 1000 us loop / 10 MHz SPI (default; IMU_SPI_HZ=3000000 overrides), cameras free-running
 # (CAM_TRIGGER_MODE=0, camera PWM must be off). Cameras stay ON (not recorded) so the SPI/CPU load matches the real VIO run.
 # If imx5_spi_node is already running it is reused and NOT stopped at the end; otherwise this script starts and stops it.
 # Stop recording with ENTER (or Ctrl+C); it also stops by itself after MAX_SECONDS.
@@ -22,7 +22,7 @@ if pgrep -x imx5_spi_node >/dev/null; then
   echo "[rec1k] imx5_spi_node already running -- reusing it. NOTE: it must be in stream mode (IMU_STREAM=1) for 1 kHz; checking the rate below."
 else
   [ "$(cat /sys/class/pwm/pwmchip2/pwm0/enable 2>/dev/null)" = 1 ] && fail "camera trigger PWM is ON; free-running cameras are needed"
-  export CAM_TRIGGER_MODE=0 IMU_STREAM=1 IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-3000000}"
+  export CAM_TRIGGER_MODE=0 IMU_STREAM=1 IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-10000000}"
   ros2 daemon stop >/dev/null 2>&1 || true
   echo "[rec1k] starting sensors (IMU stream ${IMU_FRAME_LEN} B / ${IMU_POLL_US} us / ${IMU_SPI_HZ} Hz SPI, cameras free-running)"
   setsid nohup ros2 launch "$REPO/vio_bringup/vio_bringup.launch.py" > "$L/sensors_rec1k.log" 2>&1 < /dev/null &

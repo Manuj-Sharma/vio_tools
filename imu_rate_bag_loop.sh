@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Record N bags of DUR seconds (1 kHz IMU stream at 3 MHz + both cameras), report the /imu0 rate of each, DELETE each bag.
-#   imu_rate_bag_loop.sh [N=4] [DUR=30]          (env IMU_* can be overridden; defaults = stream mode 1 kHz, 128 B, 3 MHz)
+# Record N bags of DUR seconds (1 kHz IMU stream at 10 MHz + both cameras), report the /imu0 rate of each, DELETE each bag.
+#   imu_rate_bag_loop.sh [N=4] [DUR=30]          (env IMU_* can be overridden; defaults = stream mode 1 kHz, 128 B, 10 MHz)
 # Bag 1 is recorded by sensors_and_record_notrigger.sh (which also starts the sensors); bags 2..N by record.sh with the sensors
 # still running. Only bags created by THIS script are deleted. Sensors are stopped at the end.
 set -u
@@ -8,7 +8,7 @@ N="${1:-4}"; DUR="${2:-30}"
 REPO="$HOME/vio_ar0234_icm20948"; BAGS="$HOME/rosbags"; TOOLS="$HOME/vio_tools"
 set +u; source /opt/ros/humble/setup.bash; source "$REPO/install/setup.bash"; set -u
 pgrep -x imx5_spi_node >/dev/null && { echo "sensors already running -- stop them first"; exit 1; }
-export IMU_STREAM="${IMU_STREAM:-1}" IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-3000000}" EXP_IMU_HZ=900 FOLLOW=0
+export IMU_STREAM="${IMU_STREAM:-1}" IMU_FRAME_LEN="${IMU_FRAME_LEN:-128}" IMU_POLL_US="${IMU_POLL_US:-1000}" IMU_SPI_HZ="${IMU_SPI_HZ:-10000000}" EXP_IMU_HZ=900 FOLLOW=0
 T0=$(date +%s)
 
 analyze() {   # <bag>
