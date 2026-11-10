@@ -24,6 +24,7 @@ SUF="_nt"; [ "${CAL:-nt}" = old ] && SUF=""   # CAL=nt (default) = Kalibr solve 
 CFG="$REPO/openvins_config/ar0234_mono_cam${CAM}${SUF}_filtered/estimator_config.yaml"
 [ -f "$CFG" ] || fail "config missing: $CFG (only ar0234_mono_cam0_filtered exists so far)"
 pgrep -x imx5_spi_node >/dev/null && fail "sensors already running (vio_live_stop.sh first)"
+pgrep -x imu_filter_node >/dev/null && fail "an imu_filter_node is already running (pids: $(pgrep -x imu_filter_node | tr '\n' ' ')) -- two filter nodes interleave on /imu0_filtered and corrupt OpenVINS; run vio_live_stop.sh / pkill -x imu_filter_node first"
 [ "$(cat /sys/class/pwm/pwmchip2/pwm0/enable 2>/dev/null)" = 1 ] && fail "camera trigger PWM is ON; this live setup needs it OFF (free-running cameras)"
 
 export CAM_TRIGGER_MODE=0
@@ -43,7 +44,7 @@ echo "  cam${CAM} publishing ($((SECONDS - t0)) s); settling 5 s"; sleep 5
 
 echo "[vio_live] starting imu_filter_node (order ${FILT_ORDER:-4}, ${FILT_CUTOFF:-100} Hz, out ${FILT_OUT_HZ:-300} Hz)"
 setsid nohup "$(ros2 pkg prefix imu_filter_node)/lib/imu_filter_node/imu_filter_node" --ros-args \
-   -p order:="${FILT_ORDER:-4}" -p cutoff_hz:="${FILT_CUTOFF:-100.0}" -p out_rate_hz:="${FILT_OUT_HZ:-300.0}" > "$L/imu_filter_node.log" 2>&1 < /dev/null &
+   -p order:="${FILT_ORDER:-4}" -p cutoff_hz:="$(awk -v v="${FILT_CUTOFF:-100}" 'BEGIN{printf "%.3f", v}')" -p out_rate_hz:="$(awk -v v="${FILT_OUT_HZ:-300}" 'BEGIN{printf "%.3f", v}')" > "$L/imu_filter_node.log" 2>&1 < /dev/null &   # the node rejects integer-typed doubles (75 -> must be 75.000)
 sleep 3
 grep -a "in .* Hz" "$L/imu_filter_node.log" | tail -1 | cut -c1-160
 
