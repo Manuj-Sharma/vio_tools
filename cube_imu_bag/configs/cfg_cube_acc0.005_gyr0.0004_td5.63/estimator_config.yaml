@@ -1,0 +1,212 @@
+%YAML:1.0 # need to specify the file type at the top!
+# Derived from ov_9281_flight_A (gates, IMU noise) + test calibration 2026-10-29 cam0 for bag vio_20261027_114831.
+# Bag cam rate 60 Hz, track_frequency kept at 21.
+
+# ============================================================================
+# BEST KNOWN aerial config for the OV9281 + IMX-5 nadir drone, 2026-08-01.
+#
+# Measured on ~/rosbags/field_data/rosbag2_2026_07_31-11_23_05
+# (209 s, nadir agricultural, altitude ~40 m). Three replays differing only in
+# the parameters named. Full ledger in
+# ~/rosbags/calib/tools/AERIAL_TUNING_LEDGER.md
+#
+#   run  what changed                       MSCKF nonzero   final dist   ba (m/s2)
+#   A    indoor defaults 60/40/10000          67 (1.7%)      27072 m     -1.67,1.04,0.06
+#   B    aerial gates 500/500/200000        1658 (41.9%)       746 m      0.11,0.01,0.03   <-- THIS FILE
+#   C    B + calib_cam_extrinsics false      236 (6.9%)      11846 m      0.22,0.64,0.03
+#
+# WHAT IS PROVEN TO HELP -- exactly one thing, the triangulation gates at the
+# bottom of this file. 25x more MSCKF updates, 36x less drift, and ba fell from
+# -1.67 to 0.11 m/s2, i.e. it stopped absorbing unexplained drift.
+#
+# WHAT IS PROVEN TO HURT -- pinning the camera-IMU extrinsic. Run C set
+# calib_cam_extrinsics false and everything got worse. The camera clone poses
+# used for triangulation are the IMU clones transformed BY the extrinsic
+# (UpdaterMSCKF.cpp lines 100-104), so a wrong extrinsic misplaces every camera
+# pose and the rays stop intersecting. Leaving it free lets the filter absorb a
+# residual systematic -- most likely that this bag is FLIGHT data from 31 July
+# while the calibration was done on 1 August, and/or that its exposure differs
+# from the 4000 us the timeshift was solved at. So calib_cam_extrinsics stays
+# TRUE here. That is an empirical result on this bag, not a recommendation for
+# a rig whose calibration is known to match.
+#
+# NOT the cause, ruled out by measurement -- texture (3763 FAST corners/frame
+# at threshold 20, vs num_pts 200), timestamps (Zero DT 0 in every run), and
+# total feature starvation (SLAM features worked even in run A).
+#
+# YAML GOTCHA -- never put a colon inside a TRAILING comment. cv::FileStorage
+# then parses the value as empty and silently defaults it
+# ("invalid boolean type of []"). Full-line comments starting with # are fine.
+# ============================================================================
+
+verbosity: "ALL" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+
+use_fej: false # if first-estimate Jacobians should be used (enable for good consistency)
+integration: "rk4" # discrete, rk4, analytical (if rk4 or analytical used then analytical covariance propagation is used)
+#use_stereo: true # if we have more than 1 camera, if we should try to track stereo constraints between pairs
+#max_cameras: 2 # how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)
+
+use_stereo: false # if we have more than 1 camera, if we should try to track stereo constraints between pairs
+max_cameras: 1 # how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)
+
+#calib_cam_extrinsics: false # if the transform between camera and IMU should be optimized R_ItoC, p_CinI
+calib_cam_extrinsics: false
+calib_cam_intrinsics: false # if camera intrinsics should be optimized (focal, center, distortion)
+# Tried true on 2026-07-28 as a diagnostic and REVERTED. The estimate is not
+# trustworthy here: from -0.01033 it walked to +0.00793, and from +0.00793 it
+# walked back to -0.00993. It chases whatever inconsistency is present rather
+# than converging on a physical delay, so it cannot be used to judge the
+# calibration.
+calib_cam_timeoffset: false # if timeoffset between camera and IMU should be optimized
+calib_imu_intrinsics: false # if imu intrinsics should be calibrated (rotation and skew-scale matrix)
+calib_imu_g_sensitivity: false # if gyroscope gravity sensitivity (Tg) should be calibrated
+
+
+
+max_clones: 15 # how many clones in the sliding window
+max_slam: 50 # number of features in our state vector
+#max_slam: 0 # number of features in our state vector
+max_slam_in_update: 25 # update can be split into sequential updates of batches, how many in a batch
+max_msckf_in_update: 40 # how many MSCKF features to use in the update
+dt_slam_delay: 1 # delay before initializing (helps with stability from bad initialization...)
+
+# Bangalore local gravity. IGF-1980 at 12.9716 deg latitude gives 9.78293 at
+# sea level, minus a 0.00284 free-air correction for 920 m altitude.
+# The previous 9.81 was 0.0299 m/s2 high, which is the same order as the
+# healthy accel-bias values, so the filter was absorbing it into ba.
+gravity_mag: 9.7801
+
+feat_rep_msckf: "GLOBAL_3D"
+feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
+feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+
+# zero velocity update parameters we can use
+# we support either IMU-based or disparity detection.
+# Tried true on 2026-07-28 and REVERTED -- divergence got worse, not better.
+# (It did fire and accept: "[ZUPT]: passed disparity (0.441 < 0.500, 124
+# features)" then "accepted |v_IinG| = 0.003", so it works mechanically; it
+# just did not fix the runaway. Toggle freely, this file needs no rebuild.)
+try_zupt: true
+zupt_chi2_multipler: 0 # set to 0 for only disp-based
+zupt_max_velocity: 0.1
+zupt_noise_multiplier: 10
+zupt_max_disparity: 3.0 # as oct22_zupt_disp3 (ground-hold image jitter)
+zupt_only_at_beginning: true
+
+# ==================================================================
+# ==================================================================
+
+init_window_time: 2.0 # how many seconds to collect initialization information
+init_imu_thresh: 1.5 # threshold for variance of the accelerometer to detect a "jerk" in motion
+init_max_disparity: 10.0 # max disparity to consider the platform stationary (dependent on resolution)
+init_max_features: 50 # how many features to track during initialization (saves on computation)
+
+#init_dyn_use: false # if dynamic initialization should be used
+# VARIANT -- static init instead of dynamic.
+# Dynamic init is bounded by WALL-CLOCK time (init_dyn_mle_max_time), not by
+# convergence, so it returns whatever optimum it has reached when the clock
+# runs out. That makes it load-dependent and non-reproducible. On 2026-08-03
+# it timed out ("Maximum solver time reached") and converged to a ~90 deg
+# wrong orientation, ba jumped to 3.67 m/s2, and the run diverged to 68 km on
+# a bag that had previously worked. The flight config already sets this false,
+# noting dyn-init is unreliable on far nadir feats.
+init_dyn_use: false
+init_dyn_mle_opt_calib: false # if we should optimize calibration during intialization (not recommended)
+init_dyn_mle_max_iter: 50 # how many iterations the MLE refinement should use (zero to skip the MLE)
+# Tried 0.15 on 2026-07-28 and REVERTED back to 0.05.
+init_dyn_mle_max_time: 0.05 # how many seconds the MLE should be completed in
+init_dyn_mle_max_threads: 6 # how many threads the MLE should use
+init_dyn_num_pose: 6 # number of poses to use within our window time (evenly spaced)
+init_dyn_min_deg: 10.0 # orientation change needed to try to init
+
+init_dyn_inflation_ori: 10 # what to inflate the recovered q_GtoI covariance by
+init_dyn_inflation_vel: 100 # what to inflate the recovered v_IinG covariance by
+init_dyn_inflation_bg: 10 # what to inflate the recovered bias_g covariance by
+init_dyn_inflation_ba: 100 # what to inflate the recovered bias_a covariance by
+init_dyn_min_rec_cond: 1e-12 # reciprocal condition number thresh for info inversion
+
+init_dyn_bias_g: [ 0.0, 0.0, 0.0 ] # initial gyroscope bias guess
+init_dyn_bias_a: [ 0.0, 0.0, 0.0 ] # initial accelerometer bias guess
+
+# ==================================================================
+# ==================================================================
+
+record_timing_information: false # if we want to record timing information of the method
+record_timing_filepath: "/tmp/traj_timing.txt" # https://docs.openvins.com/eval-timing.html#eval-ov-timing-flame
+
+# if we want to save the simulation state and its diagional covariance
+# use this with rosrun ov_eval error_simulation
+save_total_state: false
+filepath_est: "/tmp/ov_estimate.txt"
+filepath_std: "/tmp/ov_estimate_std.txt"
+filepath_gt: "/tmp/ov_groundtruth.txt"
+
+# ==================================================================
+# ==================================================================
+
+# our front-end feature tracking parameters
+# we have a KLT and descriptor based (KLT is better implemented...)
+use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
+num_pts: 200 # number of points (per camera) we will extract and try to track
+fast_threshold: 20 # threshold for fast extraction (warning: lower threshs can be expensive)
+grid_x: 5 # extraction sub-grid count for horizontal direction (uniform tracking)
+grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
+min_px_dist: 10 # distance between features (features near each other provide less information)
+knn_ratio: 0.70 # descriptor knn threshold for the top two descriptor matches
+track_frequency: 40.0 # frequency we will perform feature tracking at (in frames per second / hertz)
+downsample_cameras: false # will downsample image in half if true
+num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
+histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE
+
+# aruco tag tracker for the system
+# DICT_6X6_1000 from https://chev.me/arucogen/
+use_aruco: false
+num_aruco: 1024
+downsize_aruco: true
+
+# ==================================================================
+# ==================================================================
+
+# camera noises and chi-squared threshold multipliers
+up_msckf_sigma_px: 2
+up_msckf_chi2_multipler: 1
+up_slam_sigma_px: 2
+up_slam_chi2_multipler: 1
+up_aruco_sigma_px: 1
+up_aruco_chi2_multipler: 1
+
+# masks for our images
+use_mask: false
+
+# imu and camera spacial-temporal
+# imu config should also have the correct noise values
+relative_config_imu: "kalibr_imu_chain.yaml"
+relative_config_imucam: "kalibr_imucam_chain.yaml"
+
+
+
+
+
+# ==================================================================
+# NADIR / AERIAL feature-triangulation gates.
+#
+# ov_9281_bag_recal/ omits these entirely, so it inherits the OpenVINS
+# defaults from FeatureInitializerOptions.h:
+#     min_dist 0.10   max_dist 60   max_baseline 40   max_cond_number 10000
+# Those are INDOOR values. At ~40 m nadir altitude every one of them is
+# marginal or exceeded:
+#   - max_dist 60      : scene depth IS the altitude; triangulation scatter
+#                        around 40 m pushes samples past 60 and they are cut.
+#   - max_baseline 40  : this is a depth/baseline RATIO, not a distance.
+#                        window = max_clones/track_frequency = 15/21 = 0.71 s,
+#                        so baseline = v*0.71 m. At 40 m altitude that is
+#                        ratio 28 at 2 m/s, 56 at 1 m/s, 113 at 0.5 m/s --
+#                        i.e. every slow or hovering segment is rejected.
+#   - max_cond_number  : with baseline << depth the rays are near-parallel,
+#                        the linear system approaches rank-2 and condA blows
+#                        past 10000.
+# Values copied from the flight-proven ov_gps2v2/config/estimator_flight.yaml,
+# whose header calls these "the fix that made nadir work".
+fi_max_dist: 500.0
+fi_max_baseline: 500.0
+fi_max_cond_number: 200000

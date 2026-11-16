@@ -1,0 +1,92 @@
+%YAML:1.0
+# IMX-5 (DID_IMU_RAW) noise model -- MEASURED 2026-08-01, not assumed.
+#
+# HOW THESE WERE OBTAINED
+#   Three cam-IMU solves were run over the same bag with noise densities
+#   spanning 21x, and each one's NORMALIZED residual was read back. A
+#   normalized residual of 1.0 means the assumed sigma matches the data;
+#   multiplying the assumed sigma by the normalized residual recovers the true
+#   sigma. Two independent starting points converged on the same answer:
+#
+#     assumed gyro ND   normalized gyro   implied true sigma
+#     4.654e-05         3.571             1.66e-04
+#     1.000e-04         1.672             1.67e-04
+#     1.000e-03         0.267             2.67e-04   <- outlier, far off-model
+#
+#     assumed accel ND  normalized accel  implied true sigma
+#     3.333e-04         3.407             1.14e-03
+#     1.000e-03         1.187             1.19e-03
+#     1.000e-02         0.209             2.09e-03   <- outlier
+#
+#   Confirmed: a cam-IMU solve using the values below returned normalized
+#   residuals of 1.168 (gyro) and 1.260 (accel) -- both close to 1.0.
+#
+# RELATION TO THE DATASHEET
+#   InertialSense publishes ARW 0.16 deg/sqrt(hr) and VRW 0.02 m/s/sqrt(hr) for
+#   the IMX-5, which convert to 4.654e-05 rad/s/sqrt(Hz) and 3.333e-04
+#   m/s^2/sqrt(Hz). The measured values are ~3.5x that floor -- normal, since
+#   datasheet figures are best-case bench numbers that no real mounting hits,
+#   and DID_IMU_RAW is the UNCALIBRATED stream. Do NOT use the datasheet values
+#   directly: they over-trust the IMU by ~3.5x.
+#
+# RANDOM WALKS ARE STILL PLACEHOLDERS (set to noise_density/10). No Allan
+#   variance run has been done (needs >=3 h of static IMU). They are however
+#   FAR larger than the 7.6e-09 / 2.0e-09 in config/ov_9281_bag/, which are
+#   small enough to effectively freeze bg/ba -- a failure mode already seen on
+#   this rig ("drifted because bg/ba were frozen with no visual updates").
+
+imu0:
+  T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+
+  # ACCEL/GYRO RATIO EXPERIMENT -- accel back to 10x bench, gyro at measured
+  #
+  # ov_9281_aerial_staticinit is the GOLD STANDARD and keeps 1.19e-3 / 1.67e-4.
+  #
+  # Background. Measured in-flight noise on field_data/seg01_ros2 is
+  # accel z 0.246, gyro worst axis 0.0065. Setting both to those values
+  # (ov_9281_flight_imu_meas) doubled feature usage 34.5 -> 69.1 percent and
+  # removed the coasting leg, but broke the VERTICAL channel -- altitude
+  # descended through zero to -105 m at 12.75 m/s, and ba reached -0.79.
+  #
+  # Why. A nadir camera sees NO parallax from vertical motion, so altitude is
+  # essentially double-integrated accelerometer. Distrusting the accel by 126x
+  # therefore removes the only sensor observing z. Meanwhile the GYRO is what
+  # keeps attitude good, and attitude error leaks gravity into z (1 deg tilt =
+  # 0.17 m/s^2), so the gyro value must stay at the measured 6.0e-3.
+  #
+  # This variant holds gyro at the measured value and pulls accel back down,
+  # looking for the point that keeps the features without losing altitude.
+  accelerometer_noise_density: 0.005
+  accelerometer_random_walk:   3.333e-04
+  gyroscope_noise_density:     0.0004
+  gyroscope_random_walk:       4.654e-05
+  rostopic: /imu0
+  time_offset: 0.0
+  update_rate: 330.0
+  # three different modes supported:
+  # "calibrated" (same as "kalibr"), "kalibr", "rpng"
+  model: "kalibr"
+  Tw:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoGYRO:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Ta:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  R_IMUtoACC:
+    - [ 1.0, 0.0, 0.0 ]
+    - [ 0.0, 1.0, 0.0 ]
+    - [ 0.0, 0.0, 1.0 ]
+  Tg:
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]
+    - [ 0.0, 0.0, 0.0 ]

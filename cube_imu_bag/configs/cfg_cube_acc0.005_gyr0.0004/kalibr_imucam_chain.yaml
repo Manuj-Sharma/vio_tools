@@ -1,0 +1,20 @@
+%YAML:1.0
+# TEST calibration, cam0 + IMU, 2026-10-29 (single camera, OpenVINS kalibr imu-cam chain).
+# Source: ~/projects/kalibr-docker/data/cam0_imu_20261029-camchain-imucam.yaml
+#   intrinsics: cam0_intrinsics_20261029 bag 1 (reproj 0.31 px); T_cam_imu + timeshift: cam0_imu_20261029 solve
+#   Fit caveat: cam-IMU reproj 1.16 px, normalized residuals ~2.3 (Oct 28 was 0.49 / 0.92); translations good to ~15 mm only.
+#   timeshift -22.46 ms was solved at the exposure of that recording; it is exposure-dependent.
+cam0:
+  T_cam_imu:
+   - [0.0028741963010919945, 0.9999165449821666, 0.012595319231765607, 0.04143363163942329]
+   - [-0.9999705872462018, 0.0027843319663957843, 0.007146477313172294, 0.013456339276941637]
+   - [0.00711081135381671, -0.012615489147401389, 0.999895137399649, -0.031633786916761435]
+   - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: []
+  camera_model: pinhole
+  distortion_coeffs: [0.025044503836010295, -0.036757865790211376, -0.006300247070088697, 0.0024553501437199485]
+  distortion_model: radtan
+  intrinsics: [856.7938712247676, 846.2930039349599, 643.9987005563896, 317.1515866234702]
+  resolution: [1280, 720]
+  rostopic: /cam0/image_raw
+  timeshift_cam_imu: -0.02359787808293695
