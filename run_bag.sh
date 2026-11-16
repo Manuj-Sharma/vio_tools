@@ -15,7 +15,7 @@ mkdir -p "$OUT"; cp -r "$CFG" "$OUT/config"
 export DISPLAY=:1 ROS_LOCALHOST_ONLY=1
 source /opt/ros/humble/setup.bash; OV_WS=${OV_WS:-$HOME/openvins_ws_new}; source $OV_WS/install/setup.bash
 PIDS=()
-ros2 bag record -o "$OUT/odom_out" /ov_msckf/odomimu /ov_msckf/poseimu > "$OUT/record.log" 2>&1 & PIDS+=($!)
+ros2 bag record -o "$OUT/odom_out" /ov_msckf/odomimu /ov_msckf/poseimu ${RECTOPICS:-} > "$OUT/record.log" 2>&1 & PIDS+=($!)
 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 setsid taskset -c $CORE ros2 launch ov_msckf subscribe.launch.py config_path:=$OUT/config/estimator_config.yaml use_stereo:=false max_cameras:=1 verbosity:=INFO rviz_enable:=false > "$OUT/openvins.log" 2>&1 & LPID=$!; PIDS+=($!)
 rviz2 -d $HOME/rosbags/claude_tmp/display_ros2_thick.rviz > "$OUT/rviz.log" 2>&1 & PIDS+=($!)
 python3 $HOME/vio_tools/gt_oneshot_pub.py > "$OUT/gt.log" 2>&1 & PIDS+=($!)
